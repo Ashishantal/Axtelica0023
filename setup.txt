@@ -1,0 +1,16 @@
+#library to install(for python)
+pip install flask
+pip install pandas
+pip install mysql-connector-python
+pip install kafka-python
+
+Save all the files
+
+#steps to start
+1. start zookeper and then server.
+2. python app.py(on terminal)
+3. python consumer.py(on differnt terminal)
+4. copy server from app.py in terminal (below warning)
+
+notes: in consumer on line 28 batch no. can be change fro 50 -500 according to use
+<form action="/upload" method="post" enctype="multipart/form-data" class="mb-4">
