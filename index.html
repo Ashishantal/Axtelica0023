@@ -1,40 +1,213 @@
+z
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CSV Upload</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cloudflare.css') }}">
+    <style>
+        .theme-dark {
+            background-color: #1e293b;
+            color: #e2e8f0;
+        }
+        .theme-dark .navbar {
+            background-color: #334155;
+        }
+        .theme-dark .btn-primary {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+        .theme-dark .btn-success {
+            background-color: #10b981;
+            border-color: #10b981;
+        }
+        .theme-dark .alert {
+            background-color: #475569;
+            border-color: #475569;
+        }
+    </style>
 </head>
-<body class="container mt-5">
+<body class="container p-5 theme-dark">
+    <div class="navbar mb-6 rounded-lg shadow-lg">
+        <div class="container-fluid">
+            <span class="navbar-brand text-lg font-bold text-white">Axtelica</span>
+        </div>
+    </div>
 
-    <h2 class="mb-4">Make new table from CSV to MySQL via Kafka</h2>
-
-    <form action="/upload" method="post" enctype="multipart/form-data" class="mb-4">
-        <input type="file" name="file" class="form-control mb-2" required>
-        
-        <button type="submit" class="btn btn-primary">Upload</button>
-        <div id="row_count" class="mt-2"></div>
-    </form>
-
-
-    <h2>Existing Tables</h2>
-    {% if tables %}
-        <ul class="list-group">
-            {% for table in tables %}
-                <li class="list-group-item">
-                    <b>{{ table }}</b>
-                    <form action="/insert" method="post" enctype="multipart/form-data" class="mt-2">
-                        <input type="hidden" name="table" value="{{ table }}">
-                        <input type="file" name="file" class="form-control mb-2" required>
-                        <button type="submit" class="btn btn-success">Insert More Data</button>
-                    </form>
-                </li>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} mb-4 rounded-lg shadow-md" role="alert">
+                    {{ message }}
+                </div>
             {% endfor %}
-        </ul>
-    {% else %}
-        <p>No tables available.</p>
-    {% endif %}
+        {% endif %}
+    {% endwith %}
 
+    <h2 class="mb-8 text-center text-2xl font-semibold">Real-Time Data Streaming with Kafka</h2>
+
+    <div class="flex flex-wrap -mx-3">
+        <div class="w-full md:w-1/2 px-3 mb-6">
+            <div class="p-6 border-2 border-blue-500 rounded-lg shadow-lg">
+                <h3 class="text-center text-lg font-semibold mb-4">Enter New File</h3>
+                <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-4">
+                    <div class="flex items-center space-x-2">
+                        <i class="fas fa-file-upload text-blue-500"></i>
+                        <input type="file" name="file" class="form-control" required aria-label="File Upload">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-full">Upload</button>
+                    <div id="upload_row_count" class="text-sm">{% if upload_row_count %}Total rows: {{ upload_row_count }}{% endif %}</div>
+                    <div id="upload_loading" class="text-sm text-blue-500" style="display:none;">Loading...</div>
+                    <div id="upload_timer" class="text-sm text-green-500"></div>
+                </form>
+            </div>
+        </div>
+        <div class="w-full md:w-1/2 px-3 mb-6">
+            <div class="p-6 border-2 border-purple-500 rounded-lg shadow-lg">
+              <h3 class="text-center text-lg font-semibold mb-4">Select Folder and Upload All CSVs</h3>
+              <form action="/upload_folder" method="post">
+                <select name="folder_prefix" required class="form-control">
+                  {% for folder in folders %}
+                    <option value="{{ folder }}">{{ folder }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-purple w-full mt-3">Upload Folder</button>
+              </form>
+            </div>
+          </div>
+        <div class="w-full md:w-1/2 px-3 mb-6">
+            <div class="p-6 border-2 border-green-500 rounded-lg shadow-lg">
+                <h3 class="text-center text-lg font-semibold mb-4">Upload CSV from S3</h3>
+                <form action="/upload_s3" method="post" class="space-y-4">
+                    <div class="flex items-center space-x-2">
+                        <i class="fas fa-cloud-upload-alt text-green-500"></i>
+                        <select name="s3_file" class="form-control" required aria-label="S3 File Key" id="s3_file_key">
+                            <option value="">Select a file</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-success w-full">Upload from S3</button>
+                    <div id="upload_s3_loading" class="text-sm text-blue-500" style="display:none;">Loading...</div>
+                </form>
+            </div>
+        </div>
+        <div class="w-full md:w-1/2 px-3 mb-6">
+            <div class="p-6 border-2 border-gray-500 rounded-lg shadow-lg">
+                <h4 class="mb-4 text-center text-lg font-semibold">Select a Table to Insert Data Into:</h4>
+                {% if tables %}
+                    <ul class="list-group space-y-2">
+                        {% for table in tables %}
+                            <li class="list-group-item bg-gray-700 text-center rounded-lg shadow-md p-4 cursor-pointer hover:bg-blue-500 transition">
+                                <b>{{ table.table_name }}</b>
+                                <div class="row-count text-sm text-gray-300" style="display: none;">Row Count: {{ table.row_count }}</div>
+                                <div class="insert-form mt-2" style="display: none;">
+                                    <form action="/insert" method="post" enctype="multipart/form-data" class="space-y-2">
+                                        <input type="hidden" name="table" value="{{ table.table_name }}">
+                                        <div class="flex items-center space-x-2">
+                                            <i class="fas fa-file-upload text-green-500"></i>
+                                            <input type="file" name="file" class="form-control" required aria-label="File Upload">
+                                        </div>
+                                        <button type="submit" class="btn btn-success w-full">Insert More Data</button>
+                                        <div id="insert_loading" class="text-sm text-green-500" style="display:none;">Loading...</div>
+                                    </form>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-center text-gray-400">No tables available.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const tableItems = document.querySelectorAll('.list-group-item');
+
+            tableItems.forEach(item => {
+                item.addEventListener('click', function() {
+                    const insertForm = this.querySelector('.insert-form');
+                    const rowCount = this.querySelector('.row-count');
+
+                    tableItems.forEach(otherItem => {
+                        const otherInsertForm = otherItem.querySelector('.insert-form');
+                        const otherRowCount = otherItem.querySelector('.row-count');
+                        if (otherInsertForm !== insertForm) {
+                            otherInsertForm.style.display = 'none';
+                            otherRowCount.style.display = 'none';
+                        }
+                    });
+
+                    insertForm.style.display = insertForm.style.display === 'none' ? 'block' : 'none';
+                    rowCount.style.display = rowCount.style.display === 'none' ? 'block' : 'none';
+                });
+            });
+        });
+
+        const uploadForm = document.querySelector('form[action="/upload"]');
+        const insertForms = document.querySelectorAll('form[action="/insert"]');
+        const uploadLoading = document.getElementById('upload_loading');
+        const insertLoadings = document.querySelectorAll('#insert_loading');
+
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', () => {
+                uploadLoading.style.display = 'inline';
+            });
+        }
+
+        insertForms.forEach((insertForm, index) => {
+            insertForm.addEventListener('submit', () => {
+                insertLoadings[index].style.display = 'inline';
+            });
+        });
+
+        const uploadTimerSpan = document.getElementById('upload_timer');
+
+        if (uploadForm) {
+            let startTime = localStorage.getItem('uploadStartTime');
+
+            if (startTime) {
+                const endTime = new Date().getTime();
+                const elapsedTime = endTime - parseInt(startTime);
+                uploadTimerSpan.textContent = `Data transfer took ${elapsedTime / 1000} seconds`;
+                localStorage.removeItem('uploadStartTime');
+            }
+
+            uploadForm.addEventListener('submit', () => {
+                localStorage.setItem('uploadStartTime', new Date().getTime().toString());
+                uploadLoading.style.display = 'inline';
+            });
+        }
+
+        const uploadS3Form = document.querySelector('form[action="/upload_s3"]');
+        const uploadS3Loading = document.getElementById('upload_s3_loading');
+
+        if (uploadS3Form) {
+            uploadS3Form.addEventListener('submit', () => {
+                uploadS3Loading.style.display = 'inline';
+            });
+        }
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Fetch S3 files
+            fetch('/list_s3_files')
+                .then(response => response.json())
+                .then(files => {
+                    const select = document.getElementById('s3_file_key');
+                    files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.textContent = file;
+                        select.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('Error fetching S3 files:', error));
+        });
+    </script>
 </body>
 </html>
